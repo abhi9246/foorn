@@ -11,8 +11,9 @@ load_dotenv()
 # Initialize Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Template for nutritional data response
+# Template for nutritional data response including dish_name
 NUTRITION_TEMPLATE = {
+    "dish_name": "grilled_cheese_sandwich",
     "calories": 245.5,
     "protein": 12.3,
     "carbohydrates": 45.6,
@@ -20,6 +21,7 @@ NUTRITION_TEMPLATE = {
     "fiber": 3.5,
     "sugar": 2.1,
     "serving_size": "100g",
+    "portion_weight": 100.0,
     "vitamins": {
         "vitamin_a": 85.5,
         "vitamin_c": 12.3,
@@ -35,7 +37,7 @@ NUTRITION_TEMPLATE = {
 async def fetch_nutritional_data(dish_name: str) -> Dict:
     """
     Fetch nutritional data for a dish using Groq.
-    Returns structured nutritional information per serving.
+    Returns structured nutritional information per serving including dish_name.
     """
     prompt = f"""
 <INSTRUCTIONS>
@@ -48,10 +50,13 @@ NOTE: Values should be replaced with accurate nutritional data for {dish_name}.
 3. Maintain all keys exactly as shown
 4. Never include markdown or extra text
 5. Follow these value rules:
+   - dish_name must be a string formatted as lowercase with underscores (e.g., grilled_cheese_sandwich)
    - All numerical values must be positive floats
-   - serving_size must include unit (g, ml, oz, etc.)
+   - serving_size must be exactly "100g"
+   - portion_weight must be included and is weight in grams
    - All vitamin and mineral values must be in milligrams (mg)
    - Calories must be per serving
+   - If the dish is unknown, set all numerical values to 0 and serving_size to "0g"
 
 <PROHIBITIONS>
 - No text outside JSON object
@@ -85,7 +90,8 @@ NOTE: Values should be replaced with accurate nutritional data for {dish_name}.
         )
 
         response_data = json.loads(completion.choices[0].message.content.strip())
-        nutritional_data = NutritionalData(**response_data)
-        return nutritional_data.dict()
+        nutritional_data = NutritionalData(**{k: v for k, v in response_data.items() if k != "dish_name"})
+        # Return a flat dict with dish_name merged into nutritional data to avoid nested nutritional_data
+        return {**nutritional_data.dict(), "dish_name": response_data.get("dish_name", "")}
     except Exception as e:
         raise Exception(f"Failed to fetch nutritional data: {str(e)}")

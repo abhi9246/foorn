@@ -1,187 +1,347 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Activity, ChevronRight } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, UtensilsCrossed, Sun, Moon, LogOut, Apple, Droplet, Wheat, Flame, Leaf, Candy, Scale, Eye, Citrus, Bone, Magnet, Battery, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import endpoints from '../apiConfig';
 
-function Home() {
+interface HomeProps {
+  isDarkMode: boolean;
+  toggleDarkMode: () => void;
+  handleSignOut: () => void;
+}
+
+function Home({ isDarkMode, toggleDarkMode, handleSignOut }: HomeProps) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [dishName, setDishName] = useState<string>('');
+  const [nutritionalData, setNutritionalData] = useState<any>(null);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasAnalyzedOnce, setHasAnalyzedOnce] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+
+  // Function to format the dish name
+  const formatDishName = (dishName: string): string => {
+    return dishName
+      .replace(/_/g, ' ') // Replace underscores with spaces
+      .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize the first letter of each word
+  };
+
+  useEffect(() => {
+    const verifyToken = async (token: string) => {
+      try {
+        const formData = new FormData();
+        formData.append('token', token);
+
+        const response = await fetch(endpoints.auth.verifyToken, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (!data.valid) {
+            localStorage.removeItem('token');
+            navigate('/login');
+          }
+        } else {
+          localStorage.removeItem('token');
+          navigate('/login');
+        }
+      } catch (error) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      }
+    };
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+    } else {
+      verifyToken(token);
+    }
+  }, [navigate]);
 
   const handleUploadClick = () => {
+    if (isLoading) return;
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    setError('');
+    
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+        setError('File size must be less than 10MB');
         return;
       }
       
       if (!['image/jpeg', 'image/png'].includes(file.type)) {
-        alert('Only JPG and PNG files are supported');
+        setError('Only JPG and PNG files are supported');
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setSelectedImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      setSelectedImage(URL.createObjectURL(file));
+      setIsLoading(true);
+
+      // Prepare form data
+      const formData = new FormData();
+      formData.append('image', file);
+
+      // Get token from localStorage
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('User not authenticated. Please login again.');
+        setIsLoading(false);
+        navigate('/login');
+        return;
+      }
+
+      try {
+        const response = await fetch(endpoints.dish.analyze, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        });
+        
+        // Add a small delay to ensure proper UI feedback
+        setTimeout(() => {
+          async function fetchData() {
+            if (response.ok) {
+              const data = await response.json();
+              setDishName(formatDishName(data.dish_name || 'Unknown Dish'));
+              console.log(data)
+              setNutritionalData(data || null);
+              setHasAnalyzedOnce(true);
+            } else {
+              const errorData = await response.json();
+              setError(errorData.detail || 'Failed to analyze dish');
+            }
+            setIsLoading(false);
+          }
+          fetchData();
+        }, 500);
+      } catch (err) {
+        setError('Network error. Please try again.');
+        setIsLoading(false);
+      }
     }
   };
 
-  const handleViewAnalysis = () => {
-    console.log('Viewing detailed analysis');
-  };
-
-  const handleViewAllMeals = () => {
-    console.log('Viewing all meals');
-  };
+  // Map nutrients to icons and colors, with corresponding background colors
+  const nutrientIcons = [
+    { key: 'calories', label: 'Calories', value: nutritionalData ? `${nutritionalData.calories} kcal` : '-', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-100' },
+    { key: 'protein', label: 'Protein', value: nutritionalData ? `${nutritionalData.protein}g` : '-', icon: Apple, color: 'text-red-500', bg: 'bg-red-100' },
+    { key: 'carbohydrates', label: 'Carbs', value: nutritionalData ? `${nutritionalData.carbohydrates}g` : '-', icon: Wheat, color: 'text-amber-500', bg: 'bg-amber-100' },
+    { key: 'fats', label: 'Fats', value: nutritionalData ? `${nutritionalData.fats}g` : '-', icon: Droplet, color: 'text-blue-500', bg: 'bg-blue-100' },
+    { key: 'fiber', label: 'Fiber', value: nutritionalData ? `${nutritionalData.fiber}g` : '-', icon: Leaf, color: 'text-green-500', bg: 'bg-green-100' },
+    { key: 'sugar', label: 'Sugar', value: nutritionalData ? `${nutritionalData.sugar}g` : '-', icon: Candy, color: 'text-pink-500', bg: 'bg-pink-100' },
+    { key: 'vitamin_a', label: 'Vitamin A', value: nutritionalData ? `${nutritionalData.vitamins?.vitamin_a}μg` : '-', icon: Eye, color: 'text-yellow-500', bg: 'bg-yellow-100' },
+    { key: 'vitamin_c', label: 'Vitamin C', value: nutritionalData ? `${nutritionalData.vitamins?.vitamin_c}mg` : '-', icon: Citrus, color: 'text-orange-400', bg: 'bg-orange-100' },
+    { key: 'vitamin_d', label: 'Vitamin D', value: nutritionalData ? `${nutritionalData.vitamins?.vitamin_d}μg` : '-', icon: Sun, color: 'text-amber-400', bg: 'bg-amber-100' },
+    { key: 'calcium', label: 'Calcium', value: nutritionalData ? `${nutritionalData.minerals?.calcium}mg` : '-', icon: Bone, color: 'text-teal-500', bg: 'bg-teal-100' },
+    { key: 'iron', label: 'Iron', value: nutritionalData ? `${nutritionalData.minerals?.iron}mg` : '-', icon: Magnet, color: 'text-slate-500', bg: 'bg-slate-200' },
+    { key: 'potassium', label: 'Potassium', value: nutritionalData ? `${nutritionalData.minerals?.potassium}mg` : '-', icon: Battery, color: 'text-indigo-500', bg: 'bg-indigo-100' },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto px-8 py-12">
-      <div className="grid grid-cols-2 gap-16 items-center">
-        <div className="space-y-8">
-          <div className="space-y-4">
-            <h2 className="text-7xl font-serif leading-tight dark:text-white">
-              Discover<br />what's in<br />your meal
-            </h2>
-            <p className="text-lg max-w-md dark:text-gray-300">
-              Upload your meal photo and get instant nutritional analysis with our AI-powered food recognition.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <button 
-              onClick={handleUploadClick}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-coral-500 text-white px-8 py-4 rounded-full hover:bg-coral-600 transition-colors text-lg"
-            >
-              <Upload size={20} />
-              Upload Photo
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/jpeg,image/png"
-              className="hidden"
-            />
-            <p className="text-sm dark:text-gray-400">
-              Supported formats: JPG, PNG (max 10MB)
-            </p>
-          </div>
-          
-          {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-6 mt-12">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm cursor-pointer hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <p className="dark:text-gray-300">Today's Meals</p>
-                <Activity size={18} className="text-coral-500" />
-              </div>
-              <p className="text-2xl font-semibold dark:text-white">4 meals</p>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm cursor-pointer hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <p className="dark:text-gray-300">Calories</p>
-                <Activity size={18} className="text-green-500" />
-              </div>
-              <p className="text-2xl font-semibold dark:text-white">1,840 kcal</p>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm cursor-pointer hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <p className="dark:text-gray-300">Goal Progress</p>
-                <Activity size={18} className="text-blue-500" />
-              </div>
-              <p className="text-2xl font-semibold dark:text-white">76%</p>
-            </div>
-          </div>
+    <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      {/* Navigation */}
+      <nav
+        className={`flex items-center justify-between px-8 py-6 ${
+          isDarkMode ? 'bg-gray-800' : 'bg-white'
+        } shadow-sm`}
+      >
+        <div
+          className="flex items-center gap-2 cursor-pointer"
+          onClick={() => navigate('/home')}
+        >
+          <UtensilsCrossed className="text-orange-500" size={24} />
+          <h1 className={`text-2xl font-semibold ${isDarkMode ? 'text-white' : 'text-black'}`}>
+            Foorn
+          </h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={toggleDarkMode}
+            className={`p-2 rounded-full transition-colors ${
+              isDarkMode ? 'hover:bg-gray-700 text-yellow-500' : 'hover:bg-gray-100 text-gray-600'
+            }`}
+          >
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-2 px-4 py-2 text-orange-500 hover:text-orange-600"
+          >
+            <LogOut size={18} />
+            Sign Out
+          </button>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-8 py-12">
+        {/* Header Section with single line heading */}
+        <div className="text-center mb-6">
+          <h2 className={`text-4xl font-serif mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+            Discover what's in your meal
+          </h2>
+          <p className={`text-lg max-w-2xl mx-auto ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            Upload your meal photo and get instant nutritional analysis with our AI-powered food recognition.
+          </p>
+        </div>
+        
+        {/* Upload Button Centered Below Intro Text */}
+        <div className="flex flex-col items-center mb-12">
+          <button 
+            onClick={handleUploadClick}
+            disabled={isLoading}
+            className={`flex items-center justify-center gap-2 ${
+              isLoading 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-orange-500 hover:bg-orange-600'
+            } text-white px-8 py-4 rounded-full transition-colors text-lg shadow-md mb-3`}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Upload size={20} />
+                {hasAnalyzedOnce ? 'Upload Another Dish' : 'Upload a Dish'}
+              </>
+            )}
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="image/jpeg,image/png"
+            className="hidden"
+            disabled={isLoading}
+          />
+          {error && (
+            <p className="text-red-600 font-semibold mt-2">{error}</p>
+          )}
+          {/* Format info */}
+          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            Supported formats: JPG, PNG (max 10MB)
+          </p>
         </div>
 
-        {/* Food Analysis Cards */}
-        <div className="space-y-6">
-          <div className="relative">
-            <div className="absolute -top-12 -left-12 z-10">
-              <img 
-                src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c" 
-                alt="Food decoration" 
-                className="w-24 h-24 object-cover rounded-full ring-4 ring-white dark:ring-gray-800 shadow-lg" 
-              />
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-lg">
-              <img 
-                src={selectedImage || "https://images.unsplash.com/photo-1544025162-d76694265947"}
-                alt="Steak dish" 
-                className="w-full h-72 object-cover rounded-2xl mb-6" 
-              />
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold dark:text-white">
-                      Grilled Ribeye Steak
-                    </h3>
-                    <p className="dark:text-gray-400">Added today at 2:30 PM</p>
-                  </div>
-                  <button 
-                    onClick={handleViewAnalysis}
-                    className="text-coral-500 hover:text-coral-600 flex items-center gap-1"
-                  >
-                    View Analysis
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl cursor-pointer hover:bg-opacity-80 transition-colors">
-                    <div className="flex items-center justify-center w-8 h-8 bg-coral-500/10 rounded-full mx-auto mb-2">
-                      <Activity size={16} className="text-coral-500" />
+        {/* Extra Wide Horizontal Card Layout */}
+        <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-lg overflow-hidden w-full`}>
+          <div className="flex flex-col md:flex-row">
+            {/* Left side - Image */}
+            <div className="md:w-2/5">
+              <div className="relative h-full">
+                {isLoading ? (
+                  <div className="flex flex-col items-center justify-center h-full min-h-96 bg-gray-200 dark:bg-gray-700">
+                    <div className="relative">
+                      {selectedImage && (
+                        <img 
+                          src={selectedImage}
+                          alt="Analyzing..." 
+                          className="w-full h-96 object-cover opacity-40"
+                        />
+                      )}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <Loader2 size={60} className={`animate-spin ${isDarkMode ? 'text-orange-400' : 'text-orange-500'} mb-4`} />
+                        <p className={`text-lg font-medium ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>
+                          Analyzing your meal...
+                        </p>
+                        <p className={`text-sm mt-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-500'}`}>
+                          Our AI is identifying ingredients and nutrition facts
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-sm mb-1 dark:text-gray-300">Protein</p>
-                    <p className="text-xl font-semibold dark:text-white">32g</p>
                   </div>
-                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl cursor-pointer hover:bg-opacity-80 transition-colors">
-                    <div className="flex items-center justify-center w-8 h-8 bg-blue-500/10 rounded-full mx-auto mb-2">
-                      <Activity size={16} className="text-blue-500" />
-                    </div>
-                    <p className="text-sm mb-1 dark:text-gray-300">Fats</p>
-                    <p className="text-xl font-semibold dark:text-white">24g</p>
+                ) : selectedImage ? (
+                  <img 
+                    src={selectedImage}
+                    alt="Meal dish" 
+                    className="w-full h-full object-cover" 
+                    style={{ minHeight: "400px" }}
+                  />
+                ) : (
+                  <div className={`flex flex-col items-center justify-center h-full min-h-96 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                    <Upload size={48} className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'} mb-4`} />
+                    <p className={`text-lg ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                      Upload a photo to analyze
+                    </p>
+                    <p className={`text-sm mt-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Get nutrition facts in seconds
+                    </p>
                   </div>
-                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl cursor-pointer hover:bg-opacity-80 transition-colors">
-                    <div className="flex items-center justify-center w-8 h-8 bg-green-500/10 rounded-full mx-auto mb-2">
-                      <Activity size={16} className="text-green-500" />
-                    </div>
-                    <p className="text-sm mb-1 dark:text-gray-300">Carbs</p>
-                    <p className="text-xl font-semibold dark:text-white">45g</p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
-          </div>
-
-          {/* Recent Meals Preview */}
-          <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold dark:text-white">Recent Meals</h3>
-              <button 
-                onClick={handleViewAllMeals}
-                className="text-coral-500 hover:text-coral-600 text-sm"
-              >
-                View All
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <img 
-                src="https://images.unsplash.com/photo-1547496502-affa22d38842"
-                alt="Recent meal 1"
-                className="w-full h-24 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
-              />
-              <img 
-                src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38"
-                alt="Recent meal 2"
-                className="w-full h-24 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
-              />
-              <img 
-                src="https://images.unsplash.com/photo-1482049016688-2d3e1b311543"
-                alt="Recent meal 3"
-                className="w-full h-24 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
-              />
+            
+            {/* Right side - Nutritional Data */}
+            <div className="md:w-3/5 p-8">
+              <div className="mb-6">
+                {/* Enhanced Dish Name Styling */}
+                <h3 className={`font-serif text-3xl font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'} border-b border-orange-300 pb-2 inline-block`}>
+                  {isLoading 
+                    ? 'Analyzing your dish...' 
+                    : (dishName || 'Upload a photo to see nutrition facts')}
+                </h3>
+                <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-2`}>
+                  {nutritionalData 
+                    ? `Nutritional information per ${nutritionalData.serving_size} serving` 
+                    : 'Detailed nutritional breakdown will appear here'}
+                </p>
+              </div>
+              
+              {/* Nutrients Grid - 4 columns for wider layout */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {isLoading ? (
+                  // Skeleton loading for nutrients
+                  Array(12).fill(0).map((_, i) => (
+                    <div 
+                      key={i}
+                      className={`text-center p-4 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl`}
+                    >
+                      <div className={`w-8 h-8 rounded-full mx-auto mb-2 ${isDarkMode ? 'bg-gray-600' : 'bg-gray-200'} animate-pulse`}></div>
+                      <div className={`h-3 ${isDarkMode ? 'bg-gray-600' : 'bg-gray-200'} rounded w-16 mx-auto mb-2 animate-pulse`}></div>
+                      <div className={`h-5 ${isDarkMode ? 'bg-gray-600' : 'bg-gray-200'} rounded w-12 mx-auto animate-pulse`}></div>
+                    </div>
+                  ))
+                ) : (
+                  nutrientIcons.map((nutrient) => {
+                    const Icon = nutrient.icon;
+                    return (
+                      <div
+                        key={nutrient.key}
+                        className={`text-center p-4 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-xl transition-all duration-300 hover:shadow-md`}
+                      >
+                        <div className={`flex items-center justify-center w-10 h-10 ${isDarkMode ? 'bg-gray-600' : nutrient.bg} rounded-full mx-auto mb-2`}>
+                          <Icon size={20} className={nutrient.color} />
+                        </div>
+                        <p className={`text-sm mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{nutrient.label}</p>
+                        <p className={`text-xl font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{nutrient.value}</p>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              
+              {/* Empty State Call-to-Action */}
+              {!selectedImage && !isLoading && (
+                <div className="mt-8 text-center">
+                  <button 
+                    onClick={handleUploadClick}
+                    className={`px-6 py-2 border-2 border-orange-500 ${isDarkMode ? 'text-orange-400' : 'text-orange-500'} rounded-full hover:bg-orange-500 hover:text-white transition-colors`}
+                  >
+                    Upload your first meal
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
