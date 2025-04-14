@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Upload, UtensilsCrossed, Sun, Moon, LogOut, Apple, Droplet, Wheat, Flame, Leaf, Candy, Scale, Eye, Citrus, Bone, Magnet, Battery, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import endpoints from '../apiConfig';
@@ -26,41 +26,6 @@ function Home({ isDarkMode, toggleDarkMode, handleSignOut }: HomeProps) {
       .replace(/\b\w/g, (char) => char.toUpperCase()); // Capitalize the first letter of each word
   };
 
-  useEffect(() => {
-    const verifyToken = async (token: string) => {
-      try {
-        const formData = new FormData();
-        formData.append('token', token);
-
-        const response = await fetch(endpoints.auth.verifyToken, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (!data.valid) {
-            localStorage.removeItem('token');
-            navigate('/login');
-          }
-        } else {
-          localStorage.removeItem('token');
-          navigate('/login');
-        }
-      } catch (error) {
-        localStorage.removeItem('token');
-        navigate('/login');
-      }
-    };
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-    } else {
-      verifyToken(token);
-    }
-  }, [navigate]);
-
   const handleUploadClick = () => {
     if (isLoading) return;
     fileInputRef.current?.click();
@@ -69,13 +34,13 @@ function Home({ isDarkMode, toggleDarkMode, handleSignOut }: HomeProps) {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     setError('');
-    
+
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
         setError('File size must be less than 10MB');
         return;
       }
-      
+
       if (!['image/jpeg', 'image/png'].includes(file.type)) {
         setError('Only JPG and PNG files are supported');
         return;
@@ -105,15 +70,14 @@ function Home({ isDarkMode, toggleDarkMode, handleSignOut }: HomeProps) {
           },
           body: formData,
         });
-        
+
         // Add a small delay to ensure proper UI feedback
         setTimeout(() => {
           async function fetchData() {
             if (response.ok) {
               const data = await response.json();
               setDishName(formatDishName(data.dish_name || 'Unknown Dish'));
-              console.log(data)
-              setNutritionalData(data || null);
+              setNutritionalData(data.nutritional_data || null);
               setHasAnalyzedOnce(true);
             } else {
               const errorData = await response.json();
